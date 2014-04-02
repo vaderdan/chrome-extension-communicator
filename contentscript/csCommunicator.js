@@ -1,35 +1,63 @@
 // Manages a single tab connection
 
 var communicator = (function() {
-  // Register this tab to the background script
-  var port = chrome.extension.connect();
-  console.log('Requesting connection to background script', port);
+    // Register this tab to the background script
+    var port = chrome.extension.connect();
+    var disconected = false;
 
-  // Public methods
-  return {
-    /**
-     * A 'request' is a message from the content script sent to the background script
-     * @param message
-     * @param callback
-     */
-    request: function(message, callback) {
-      chrome.extension.sendMessage(message, function(response) {
-        callback(response);
-      });
-    },
+    port.onDisconnect.addListener(function() {
+        disconected = true;
+    })
 
-    /**
-     * Is called when a background script calls 'communicator.notify'
-     * @param event
-     * @param callback
-     */
-    on: function(event, callback) {
-      chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
-        if (request.event == event) {
-          callback.call(this, request.message);
-          sendResponse && sendResponse(request.message);
+    // Public methods
+    return {
+        /**
+         * A 'request' is a message from the content script sent to the background script
+         * @param message
+         * @param callback
+         */
+        request: function(event, message, callback) {
+            callback = typeof callback != 'undefined' ? callback : function() {};
+            if (disconected) {
+                return callback();
+            }
+
+            var notification = {
+                event: event,
+                message: message
+            };
+
+            chrome.extension.sendMessage(notification, callback);
+        },
+
+        /**
+         * Is called when a background script calls 'communicator.notify'
+         * @param event
+         * @param callback
+         */
+        on: function(event, callback) {
+            callback = typeof callback != 'undefined' ? callback : function() {};
+            if (disconected) {
+                return callback();
+            }
+
+            if (event == 'disconected') {
+                port.onDisconnect.addListener(function() {
+                    console.log('disconected')
+                    disconected = true;
+                    callback(true);
+                })
+
+                return;
+            }
+
+            setTimeout(function() {
+                chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
+                    if (request.event == event) {
+                        sendResponse && sendResponse(callback(request.message, sender));
+                    }
+                });
+            }, 100);
         }
-      });
     }
-  }
 })();
